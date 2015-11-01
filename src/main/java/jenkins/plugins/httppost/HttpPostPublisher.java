@@ -1,7 +1,7 @@
 package jenkins.plugins.httppost;
 
 import com.squareup.okhttp.Headers;
-import com.squareup.okhttp.MultipartBuilder;
+import com.squareup.okhttp.MediaType;
 import com.squareup.okhttp.OkHttpClient;
 import com.squareup.okhttp.Request;
 import com.squareup.okhttp.RequestBody;
@@ -26,14 +26,6 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
-/**
- * Upload all {@link hudson.model.Run.Artifact artifacts} using a multipart HTTP POST call to an
- * specific URL.<br> Additional metadata will be included in the request as HTTP headers: {@code
- * Job-Name}, {@code Build-Number} and {@code Build-Timestamp} are included automatically by the
- * time writing.
- *
- * @author Christian Becker (christian.becker.1987@gmail.com)
- */
 @SuppressWarnings("UnusedDeclaration") // This class will be loaded using its Descriptor.
 public class HttpPostPublisher extends Notifier {
 
@@ -44,14 +36,7 @@ public class HttpPostPublisher extends Notifier {
   @SuppressWarnings({"unchecked", "deprecation"})
   @Override
   public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) {
-    if (build.getResult().isWorseOrEqualTo(Result.FAILURE)) {
-      listener.getLogger().println("HTTP POST: Skipping because of FAILURE");
-      return true;
-    }
-
-    List<Run.Artifact> artifacts = build.getArtifacts();
-    if (artifacts.isEmpty()) {
-      listener.getLogger().println("HTTP POST: No artifacts to POST");
+    if (!build.getResult().isWorseOrEqualTo(Result.FAILURE)) {
       return true;
     }
 
@@ -64,22 +49,13 @@ public class HttpPostPublisher extends Notifier {
     }
 
     try {
-      MultipartBuilder multipart = new MultipartBuilder();
-      multipart.type(MultipartBuilder.FORM);
-      for (Run.Artifact artifact : artifacts) {
-        multipart.addFormDataPart(artifact.getFileName(), artifact.getFileName(),
-            RequestBody.create(null, artifact.getFile()));
-      }
-
       OkHttpClient client = new OkHttpClient();
       client.setConnectTimeout(30, TimeUnit.SECONDS);
       client.setReadTimeout(60, TimeUnit.SECONDS);
 
       Request.Builder builder = new Request.Builder();
       builder.url(url);
-      builder.header("Job-Name", build.getProject().getName());
-      builder.header("Build-Number", String.valueOf(build.getNumber()));
-      builder.header("Build-Timestamp", String.valueOf(build.getTimeInMillis()));
+
       if (headers != null && headers.length() > 0) {
         String[] lines = headers.split("\r?\n");
         for (String line : lines) {
@@ -87,7 +63,19 @@ public class HttpPostPublisher extends Notifier {
           builder.header(line.substring(0, index).trim(), line.substring(index + 1).trim());
         }
       }
-      builder.post(multipart.build());
+
+      String content = String.format("Job failed: %s #%d\n%s",
+                                     build.getProject().getName(),
+                                     build.getNumber(),
+                                     build.getAbsoluteUrl());
+
+      RequestBody body = RequestBody.create(
+          MediaType.parse("application/json; charset=utf-8"),
+          "payload={\"serviceId\":\"ncs\",\"botNo\":9,\"userKeyList\":["
+          + descriptor.userKeyList
+          + "],\"content\":\"" + content + "\",\"type\":5,\"push\":1}");
+
+      builder.post(body);
 
       Request request = builder.build();
       listener.getLogger().println(String.format("---> POST %s", url));
@@ -122,6 +110,7 @@ public class HttpPostPublisher extends Notifier {
 
     public String url;
     public String headers;
+    public String userKeyList;
 
     public Descriptor() {
       load();
@@ -134,7 +123,7 @@ public class HttpPostPublisher extends Notifier {
 
     @Override
     public String getDisplayName() {
-      return "HTTP POST artifacts to an URL";
+      return "HTTP POST Publisher";
     }
 
     public FormValidation doCheckUrl(@QueryParameter String value) {
