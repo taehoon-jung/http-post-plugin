@@ -29,15 +29,15 @@ import org.kohsuke.stapler.StaplerRequest;
 @SuppressWarnings("UnusedDeclaration") // This class will be loaded using its Descriptor.
 public class HttpPostPublisher extends Notifier {
 
-  private final String userKeyList;
+  private final String recipients;
 
   @DataBoundConstructor
-  public HttpPostPublisher(String userKeyList) {
-      this.userKeyList = userKeyList;
+  public HttpPostPublisher(String recipients) {
+      this.recipients = recipients;
   }
 
-  public String getUserKeyList() {
-      return userKeyList;
+  public String getRecipients() {
+      return recipients;
   }
 
   @SuppressWarnings({"unchecked", "deprecation"})
@@ -76,11 +76,17 @@ public class HttpPostPublisher extends Notifier {
                                      build.getNumber(),
                                      build.getAbsoluteUrl());
 
+      JSONObject payload = new JSONObject();
+      payload.put("serviceId", "ncs");
+      payload.put("botNo", 9);
+      payload.put("emailList", recipients.split(" "));
+      payload.put("content", content);
+      payload.put("type", 5);
+      payload.put("push", 1);
+
       RequestBody body = RequestBody.create(
           MediaType.parse("application/json; charset=utf-8"),
-          "payload={\"serviceId\":\"ncs\",\"botNo\":9,\"userKeyList\":["
-          + userKeyList
-          + "],\"content\":\"" + content + "\",\"type\":5,\"push\":1}");
+          "payload=" + payload);
 
       builder.post(body);
 
