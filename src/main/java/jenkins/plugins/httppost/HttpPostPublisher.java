@@ -22,6 +22,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import net.sf.json.JSONObject;
+import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
@@ -55,6 +56,11 @@ public class HttpPostPublisher extends Notifier {
       return true;
     }
 
+    if (StringUtils.isEmpty(recipients)) {
+      listener.getLogger().println("HTTP POST: No Recipients specified");
+      return true;
+    }
+
     try {
       OkHttpClient client = new OkHttpClient();
       client.setConnectTimeout(30, TimeUnit.SECONDS);
@@ -85,22 +91,24 @@ public class HttpPostPublisher extends Notifier {
       payload.put("push", 1);
 
       RequestBody body = RequestBody.create(
-          MediaType.parse("application/json; charset=utf-8"),
-          "payload=" + payload);
+          MediaType.parse("application/x-www-form-urlencoded"),
+          "payload=" + payload.toString());
 
       builder.post(body);
 
       Request request = builder.build();
-      listener.getLogger().println(String.format("---> POST %s", url));
-      listener.getLogger().println(request.headers());
+      listener.getLogger().println(String.format("POST %s", url));
 
       long start = System.nanoTime();
       Response response = client.newCall(request).execute();
       long time = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-      listener.getLogger()
-          .println(String.format("<--- %s %s (%sms)", response.code(), response.message(), time));
-      listener.getLogger().println(response.body().string());
+      if (!response.isSuccessful())
+      {
+          listener.getLogger().println(String.format("%s %s",
+                                                     response.code(),
+                                                     response.message()));
+      }
     } catch (Exception e) {
       e.printStackTrace(listener.getLogger());
     }
